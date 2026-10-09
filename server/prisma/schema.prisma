@@ -1,0 +1,166 @@
+// Prisma Schema for AquaSense — Intelligent Water Leakage Detection & Conservation
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("Environmental Facility Admin")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Building {
+  id                  String       @id @default(uuid())
+  name                String
+  code                String       @unique
+  description         String?
+  type                String       // Academic, Administrative, Residential
+  floors              Int          @default(3)
+  latitude            Float
+  longitude           Float
+  dailyBaselineLiters Float        @default(15000)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  rooms               Room[]
+  sensors             Sensor[]
+  waterUsage          WaterUsage[]
+  leaks               Leak[]
+  alerts              Alert[]
+  aiInsights          AIInsight[]
+}
+
+model Room {
+  id         String   @id @default(uuid())
+  name       String
+  code       String
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  floor      Int
+  areaType   String   // Laboratory, Restroom, Classroom, Canteen, Pantry, Utility Room
+  createdAt  DateTime @default(now())
+
+  sensors    Sensor[]
+  leaks      Leak[]
+}
+
+model Sensor {
+  id             String          @id @default(uuid())
+  code           String          @unique // e.g. S-ENG-101
+  name           String
+  type           String          // Ultrasonic Flow Meter, Pulse Water Meter, In-line Flow Sensor
+  buildingId     String
+  building       Building        @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  roomId         String
+  room           Room            @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  pipeDiameterMm Float           @default(25.0)
+  baselineFlowLpm Float          @default(4.0) // Liters per minute baseline
+  currentFlowLpm Float           @default(0.0)
+  status         String          @default("online") // online, warning, leak, offline
+  riskLevel      String          @default("Normal") // Normal, Low Risk, Medium Risk, High Risk
+  anomalyScore   Float           @default(0.0) // 0 to 100
+  latitude       Float
+  longitude      Float
+  lastReadingAt  DateTime        @default(now())
+  createdAt      DateTime        @default(now())
+
+  readings       SensorReading[]
+  leaks          Leak[]
+  alerts         Alert[]
+  aiInsights     AIInsight[]
+}
+
+model SensorReading {
+  id               String   @id @default(uuid())
+  sensorId         String
+  sensor           Sensor   @relation(fields: [sensorId], references: [id], onDelete: Cascade)
+  flowRate         Float    // Liters per minute
+  totalConsumption Float    // Cumulative Liters
+  timestamp        DateTime @default(now())
+
+  @@index([sensorId, timestamp])
+}
+
+model Leak {
+  id                  String   @id @default(uuid())
+  sensorId            String
+  sensor              Sensor   @relation(fields: [sensorId], references: [id], onDelete: Cascade)
+  buildingId          String
+  building            Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  roomId              String
+  room                Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  severity            String   // Critical, High, Medium, Low
+  probability         Float    // 0 to 100 (%)
+  anomalyScore        Float    // 0 to 100
+  status              String   @default("Detected") // Detected, Investigating, Resolved
+  estimatedLossLiters Float    @default(0)
+  lossRateLph         Float    @default(0) // Liters per hour
+  currentFlowRate     Float
+  baselineFlowRate    Float
+  aiExplanation       String
+  recommendedAction   String
+  startTime           DateTime @default(now())
+  endTime             DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  alerts              Alert[]
+}
+
+model Alert {
+  id                String   @id @default(uuid())
+  leakId            String?
+  leak              Leak?    @relation(fields: [leakId], references: [id], onDelete: SetNull)
+  sensorId          String
+  sensor            Sensor   @relation(fields: [sensorId], references: [id], onDelete: Cascade)
+  buildingId        String
+  building          Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  severity          String   // Critical, High, Medium, Low
+  title             String
+  message           String
+  leakProbability   Float    @default(0)
+  estimatedWastage  Float    @default(0) // Liters
+  recommendedAction String
+  isRead            Boolean  @default(false)
+  isResolved        Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model WaterUsage {
+  id                 String   @id @default(uuid())
+  buildingId         String
+  building           Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  date               String   // YYYY-MM-DD
+  hour               Int?     // 0 to 23
+  actualConsumption  Float    // Liters
+  expectedConsumption Float   // Liters
+  waterSaved         Float    @default(0) // Liters
+  createdAt          DateTime @default(now())
+
+  @@index([buildingId, date])
+}
+
+model AIInsight {
+  id          String    @id @default(uuid())
+  buildingId  String?
+  building    Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  sensorId    String?
+  sensor      Sensor?   @relation(fields: [sensorId], references: [id], onDelete: Cascade)
+  type        String    // LEAK_DETECTION, ANOMALY_WARNING, CONSERVATION_OPPORTUNITY, EFFICIENCY_IMPACT
+  title       String
+  description String
+  confidence  Float     // 0 to 100 (%)
+  metricValue Float?
+  createdAt   DateTime  @default(now())
+}
